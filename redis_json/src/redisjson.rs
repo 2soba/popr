@@ -18,11 +18,15 @@ use crate::backward;
 use crate::error::Error;
 use crate::ivalue_manager::RedisIValueJsonKeyManager;
 use crate::manager::Manager;
+use once_cell::unsync::Lazy;
 use serde::Serialize;
 use std::fmt;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::str::FromStr;
+
+const JSON_ROOT_PATH_LEGACY: &str = ".";
+pub const JSON_ROOT_PATH: Lazy<Path> = Lazy::new(|| Path::new("$"));
 
 /// Returns normalized start index
 #[must_use]
@@ -76,7 +80,7 @@ impl FromStr for Format {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ReplyFormat {
     STRING,
     STRINGS,
@@ -152,10 +156,42 @@ impl Display for Path<'_> {
     }
 }
 
+/// Returns the default path for the given RESP version
+impl Default for Path<'_> {
+    fn default() -> Self {
+        Self::new(JSON_ROOT_PATH_LEGACY)
+    }
+}
+
+impl PartialEq for Path<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_path() == other.get_path()
+    }
+}
+
+impl Eq for Path<'_> {}
+
 #[derive(Debug)]
 pub struct RedisJSON<T> {
     //FIXME: make private and expose array/object Values without requiring a path
     pub data: T,
+}
+
+pub(crate) trait ResultInto<S, F> {
+    fn into_both(self) -> Result<S, F>;
+}
+
+impl<T, E, S, F> ResultInto<S, F> for Result<T, E>
+where
+    S: From<T>,
+    F: From<E>,
+{
+    fn into_both(self) -> Result<S, F> {
+        match self {
+            Ok(ok) => Ok(ok.into()),
+            Err(e) => Err(e.into()),
+        }
+    }
 }
 
 pub mod type_methods {
